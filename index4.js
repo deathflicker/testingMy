@@ -1,5 +1,3 @@
-import { __awaiter as asyncHelper, __generator as generatorHelper, __spreadArray as arraySpread, __assign as objectAssign } from "/npm/tslib@2.8.1/+esm";
-
 const VERSION = "4.6.1";
 
 function delay(ms, value) {
@@ -26,24 +24,22 @@ function executeSafely(func, callback) {
     }
 }
 
-function processArray(items, processor, chunkSize = 16) {
-    return asyncHelper(this, void 0, void 0, function* () {
-        const results = Array(items.length);
-        let lastTime = Date.now();
-        for (let i = 0; i < items.length; i++) {
-            results[i] = processor(items[i], i);
-            const currentTime = Date.now();
-            if (currentTime >= lastTime + chunkSize) {
-                lastTime = currentTime;
-                yield new Promise((resolve) => {
-                    const channel = new MessageChannel();
-                    channel.port1.onmessage = () => resolve();
-                    channel.port2.postMessage(null);
-                });
-            }
+async function processArray(items, processor, chunkSize = 16) {
+    const results = Array(items.length);
+    let lastTime = Date.now();
+    for (let i = 0; i < items.length; i++) {
+        results[i] = processor(items[i], i);
+        const currentTime = Date.now();
+        if (currentTime >= lastTime + chunkSize) {
+            lastTime = currentTime;
+            await new Promise((resolve) => {
+                const channel = new MessageChannel();
+                channel.port1.onmessage = () => resolve();
+                channel.port2.postMessage(null);
+            });
         }
-        return results;
-    });
+    }
+    return results;
 }
 
 function suppressErrors(promise) {
@@ -74,7 +70,6 @@ function roundToPrecision(number, precision = 1) {
     return Math.round(number * factor) / factor;
 }
 
-// Bit manipulation functions
 function add64(target, source) {
     let high1 = target[0] >>> 16, low1 = target[0] & 0xFFFF;
     let high2 = target[1] >>> 16, low2 = target[1] & 0xFFFF;
@@ -265,7 +260,7 @@ function isNotFunction(value) {
     return typeof value !== "function";
 }
 
-function collectData(sources, context, excludeKeys, chunkSize) {
+async function collectData(sources, context, excludeKeys, chunkSize) {
     const availableKeys = Object.keys(sources).filter(key => !excludeKeys.includes(key));
     const processed = suppressErrors(
         processArray(
@@ -291,16 +286,14 @@ function collectData(sources, context, excludeKeys, chunkSize) {
         )
     );
     
-    return asyncHelper(this, void 0, void 0, function* () {
-        const results = yield processed;
-        const values = yield processArray(results, item => suppressErrors(item()), chunkSize);
-        const finalResults = yield Promise.all(values);
-        const output = {};
-        for (let i = 0; i < availableKeys.length; i++) {
-            output[availableKeys[i]] = finalResults[i];
-        }
-        return output;
-    });
+    const results = await processed;
+    const values = await processArray(results, item => suppressErrors(item()), chunkSize);
+    const finalResults = await Promise.all(values);
+    const output = {};
+    for (let i = 0; i < availableKeys.length; i++) {
+        output[availableKeys[i]] = finalResults[i];
+    }
+    return output;
 }
 
 function wrapResult(func, transformer) {
@@ -314,7 +307,6 @@ function wrapResult(func, transformer) {
     };
 }
 
-// Browser detection functions
 function isTrident() {
     const win = window, nav = navigator;
     return countTruthy([
@@ -568,60 +560,58 @@ function sumAbsoluteValues(array) {
     return array.reduce((sum, value) => sum + Math.abs(value), 0);
 }
 
-function createIframe(executor, content, timeout = 50) {
-    return asyncHelper(this, void 0, void 0, function* () {
-        const doc = document;
-        while (!doc.body) yield delay(timeout);
-        
-        const frame = doc.createElement("iframe");
-        try {
-            yield new Promise((resolve, reject) => {
-                let isLoaded = false;
-                const onLoad = () => {
-                    isLoaded = true;
-                    resolve();
-                };
-                
-                frame.onload = onLoad;
-                frame.onerror = error => {
-                    isLoaded = true;
-                    reject(error);
-                };
-                
-                const styles = frame.style;
-                styles.setProperty("display", "block", "important");
-                styles.position = "absolute";
-                styles.top = "0";
-                styles.left = "0";
-                styles.visibility = "hidden";
-                
-                if (content && "srcdoc" in frame) {
-                    frame.srcdoc = content;
+async function createIframe(executor, content, timeout = 50) {
+    const doc = document;
+    while (!doc.body) await delay(timeout);
+    
+    const frame = doc.createElement("iframe");
+    try {
+        await new Promise((resolve, reject) => {
+            let isLoaded = false;
+            const onLoad = () => {
+                isLoaded = true;
+                resolve();
+            };
+            
+            frame.onload = onLoad;
+            frame.onerror = error => {
+                isLoaded = true;
+                reject(error);
+            };
+            
+            const styles = frame.style;
+            styles.setProperty("display", "block", "important");
+            styles.position = "absolute";
+            styles.top = "0";
+            styles.left = "0";
+            styles.visibility = "hidden";
+            
+            if (content && "srcdoc" in frame) {
+                frame.srcdoc = content;
+            } else {
+                frame.src = "about:blank";
+            }
+            
+            doc.body.appendChild(frame);
+            
+            const checkReady = () => {
+                if (isLoaded) return;
+                const frameDoc = frame.contentWindow?.document;
+                if (frameDoc?.readyState === "complete") {
+                    onLoad();
                 } else {
-                    frame.src = "about:blank";
+                    setTimeout(checkReady, 10);
                 }
-                
-                doc.body.appendChild(frame);
-                
-                const checkReady = () => {
-                    if (isLoaded) return;
-                    const frameDoc = frame.contentWindow?.document;
-                    if (frameDoc?.readyState === "complete") {
-                        onLoad();
-                    } else {
-                        setTimeout(checkReady, 10);
-                    }
-                };
-                checkReady();
-            });
-            
-            while (!frame.contentWindow?.document.body) yield delay(timeout);
-            
-            return yield executor(frame, frame.contentWindow);
-        } finally {
-            frame.parentNode?.removeChild(frame);
-        }
-    });
+            };
+            checkReady();
+        });
+        
+        while (!frame.contentWindow?.document.body) await delay(timeout);
+        
+        return await executor(frame, frame.contentWindow);
+    } finally {
+        frame.parentNode?.removeChild(frame);
+    }
 }
 
 function createElement(selector) {
@@ -783,21 +773,21 @@ function initScreenFrame() {
             checkFrame();
         }
         
-        return asyncHelper(this, void 0, void 0, function* () {
+        return async function() {
             let frame = getFrameData();
             if (isFrameEmpty(frame)) {
-                if (cachedFrame) return arraySpread([], cachedFrame, true);
+                if (cachedFrame) return [...cachedFrame];
                 if (getFullscreenElement()) {
                     const doc = document;
                     const exit = doc.exitFullscreen || doc.msExitFullscreen || 
                                doc.mozCancelFullScreen || doc.webkitExitFullscreen;
-                    yield exit.call(doc);
+                    await exit.call(doc);
                     frame = getFrameData();
                 }
             }
             if (!isFrameEmpty(frame)) cachedFrame = frame;
             return frame;
-        });
+        }();
     };
 }
 
@@ -815,38 +805,36 @@ function isFrameEmpty(frame) {
     return !frame.some(value => value);
 }
 
-function checkElements(selectors) {
-    return asyncHelper(this, void 0, void 0, function* () {
-        const doc = document;
-        while (!doc.body) yield delay(50);
-        
-        const container = doc.createElement("div");
-        const elements = new Array(selectors.length);
-        const results = {};
-        styleElement(container);
-        
+async function checkElements(selectors) {
+    const doc = document;
+    while (!doc.body) await delay(50);
+    
+    const container = doc.createElement("div");
+    const elements = new Array(selectors.length);
+    const results = {};
+    styleElement(container);
+    
+    for (let i = 0; i < selectors.length; i++) {
+        const element = createElement(selectors[i]);
+        if (element.tagName === "DIALOG") element.show();
+        const wrapper = doc.createElement("div");
+        styleElement(wrapper);
+        wrapper.appendChild(element);
+        container.appendChild(wrapper);
+        elements[i] = element;
+    }
+    
+    doc.body.appendChild(container);
+    try {
         for (let i = 0; i < selectors.length; i++) {
-            const element = createElement(selectors[i]);
-            if (element.tagName === "DIALOG") element.show();
-            const wrapper = doc.createElement("div");
-            styleElement(wrapper);
-            wrapper.appendChild(element);
-            container.appendChild(wrapper);
-            elements[i] = element;
-        }
-        
-        doc.body.appendChild(container);
-        try {
-            for (let i = 0; i < selectors.length; i++) {
-                if (!elements[i].offsetParent) {
-                    results[selectors[i]] = true;
-                }
+            if (!elements[i].offsetParent) {
+                results[selectors[i]] = true;
             }
-        } finally {
-            container.parentNode?.removeChild(container);
         }
-        return results;
-    });
+    } finally {
+        container.parentNode?.removeChild(container);
+    }
+    return results;
 }
 
 function styleElement(element) {
@@ -935,72 +923,69 @@ function getGLProperties(gl) {
 
 const DEVICE_PROFILER = {
     textStyles: function() {
-        return createIframe((frame, win) => {
-            return asyncHelper(this, void 0, void 0, function* () {
-                const doc = win.document;
-                const body = doc.body;
-                body.style.fontSize = "48px";
-                
-                const container = doc.createElement("div");
-                container.style.setProperty("visibility", "hidden", "important");
-                
-                const baseWidths = {};
-                const baseHeights = {};
-                const fontMap = {};
-                
-                const createSpan = font => {
-                    const span = doc.createElement("span");
-                    const style = span.style;
-                    style.position = "absolute";
-                    style.top = "0";
-                    style.left = "0";
-                    style.fontFamily = font;
-                    span.textContent = "mmMwWLliI0O&1";
-                    container.appendChild(span);
-                    return span;
-                };
-                
-                const createFontTest = () => {
-                    const result = {};
-                    for (const font of FONT_LIST) {
-                        result[font] = FONT_TYPES.map(type => createSpan(`'${font}',${type}`));
-                    }
-                    return result;
-                };
-                
-                const hasVariation = spans => {
-                    return FONT_TYPES.some((type, i) => 
-                        spans[i].offsetWidth !== baseWidths[type] || 
-                        spans[i].offsetHeight !== baseHeights[type]
-                    );
-                };
-                
-                const baseSpans = FONT_TYPES.map(createSpan);
-                const fontTests = createFontTest();
-                body.appendChild(container);
-                
-                FONT_TYPES.forEach((type, i) => {
-                    baseWidths[type] = baseSpans[i].offsetWidth;
-                    baseHeights[type] = baseSpans[i].offsetHeight;
-                });
-                
-                return FONT_LIST.filter(font => hasVariation(fontTests[font]));
+        return createIframe(async (frame, win) => {
+            const doc = win.document;
+            const body = doc.body;
+            body.style.fontSize = "48px";
+            
+            const container = doc.createElement("div");
+            container.style.setProperty("visibility", "hidden", "important");
+            
+            const baseWidths = {};
+            const baseHeights = {};
+            const fontMap = {};
+            
+            const createSpan = font => {
+                const span = doc.createElement("span");
+                const style = span.style;
+                style.position = "absolute";
+                style.top = "0";
+                style.left = "0";
+                style.fontFamily = font;
+                span.textContent = "mmMwWLliI0O&1";
+                container.appendChild(span);
+                return span;
+            };
+            
+            const createFontTest = () => {
+                const result = {};
+                for (const font of FONT_LIST) {
+                    result[font] = FONT_TYPES.map(type => createSpan(`'${font}',${type}`));
+                }
+                return result;
+            };
+            
+            const hasVariation = spans => {
+                return FONT_TYPES.some((type, i) => 
+                    spans[i].offsetWidth !== baseWidths[type] || 
+                    spans[i].offsetHeight !== baseHeights[type]
+                );
+            };
+            
+            const baseSpans = FONT_TYPES.map(createSpan);
+            const fontTests = createFontTest();
+            body.appendChild(container);
+            
+            FONT_TYPES.forEach((type, i) => {
+                baseWidths[type] = baseSpans[i].offsetWidth;
+                baseHeights[type] = baseSpans[i].offsetHeight;
             });
+            
+            return FONT_LIST.filter(font => hasVariation(fontTests[font]));
         });
     },
     
     elementBlockers: function({ debug } = {}) {
-        return asyncHelper(this, void 0, void 0, function* () {
+        return async function() {
             if (!isWebKit() && !isAndroid()) return;
             
             const blockers = {
-                // Simplified example - original had many more
                 basic: [".ad-banner", "#popup-ad", ".overlay-ad"],
                 social: [".share-button", "#follow-us", ".social-widget"]
             };
             
             const allSelectors = Object.values(blockers).flat();
-            const results = yield checkElements(allSelectors);
+            const results = await checkElements(allSelectors);
             
             if (debug) {
                 console.log("Element blockers debug:", results);
@@ -1013,7 +998,7 @@ const DEVICE_PROFILER = {
                     return blockedCount > 0.6 * selectors.length;
                 })
                 .sort();
-        });
+        }();
     },
     
     fontMetrics: function() {
@@ -1031,7 +1016,7 @@ const DEVICE_PROFILER = {
                 }
                 
                 const textDiv = doc.createElement("div");
-                textDiv.textContent = arraySpread([], Array(width / 20 | 0), true)
+                textDiv.textContent = [...Array(width / 20 | 0)]
                     .map(() => "word")
                     .join(" ");
                 body.appendChild(textDiv);
@@ -1058,10 +1043,10 @@ const DEVICE_PROFILER = {
             return () => Promise.resolve(undefined);
         }
         const frameGetter = initScreenFrame();
-        return asyncHelper(this, void 0, void 0, function* () {
-            const frame = yield frameGetter();
+        return async function() {
+            const frame = await frameGetter();
             return frame.map(value => value === null ? null : roundToPrecision(value, 10));
-        });
+        };
     },
     
     canvasProfile: () => getCanvasData(isWebKit() && isModernBrowser() && isSpecialBrowser()),
@@ -1403,7 +1388,7 @@ function calculateConfidence(data) {
 function serializeData(data) {
     return JSON.stringify(data, (key, value) => {
         if (value instanceof Error) {
-            return objectAssign({
+            return Object.assign({
                 name: value.name,
                 message: value.message,
                 stack: value.stack?.split("\n")
@@ -1434,9 +1419,9 @@ function waitIdle(timeout = 50) {
 function createIdentityLoader(loader, debug) {
     const startTime = Date.now();
     return {
-        get: asyncHelper(this, void 0, void 0, function* () {
+        get: async function() {
             const now = Date.now();
-            const components = yield loader();
+            const components = await loader();
             const identity = {
                 get visitorId() {
                     if (!this._id) this._id = hashProfile(components);
@@ -1460,16 +1445,14 @@ components: ${serializeData(components)}`);
             }
             
             return identity;
-        })
+        }
     };
 }
 
-function initializeDeviceIdentity({ delayFallback, debug } = {}) {
-    return asyncHelper(this, void 0, void 0, function* () {
-        yield waitIdle(delayFallback);
-        const collector = () => collectData(DEVICE_PROFILER, {}, [], undefined);
-        return createIdentityLoader(collector, debug);
-    });
+async function initializeDeviceIdentity({ delayFallback, debug } = {}) {
+    await waitIdle(delayFallback);
+    const collector = () => collectData(DEVICE_PROFILER, {}, [], undefined);
+    return createIdentityLoader(collector, debug);
 }
 
 export const DeviceIdentity = {
