@@ -207,7 +207,7 @@ function generateHash(input, seed = 0) {
     
     tempA[0] = tempA[1] = tempB[0] = tempB[1] = 0;
     const tempC = [0, 0];
-    
+    const i = mainLength;
     switch (remainder) {
         case 15: tempC[1] = bytes[i + 14]; shiftRight64(tempC, 48); xor64(tempB, tempC);
         case 14: tempC[1] = bytes[i + 13]; shiftRight64(tempC, 40); xor64(tempB, tempC);
